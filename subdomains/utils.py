@@ -2,21 +2,38 @@ import functools
 from urlparse import urlunparse
 
 from django.conf import settings
-from django.contrib.sites.models import Site
 from django.core.urlresolvers import reverse as simple_reverse
+from django.utils.importlib import import_module
+from django.core.exceptions import ImproperlyConfigured
 
+get_domain_path = getattr(settings, 'SUBDOMAIN_GET_DOMAIN', None)
+get_domain = None
 
-def current_site_domain():
-    domain = Site.objects.get_current().domain
+if not get_domain_path:
+    from django.contrib.sites.models import Site
 
-    prefix = 'www.'
-    if getattr(settings, 'REMOVE_WWW_FROM_DOMAIN', False) \
-            and domain.startswith(prefix):
-        domain = domain.replace(prefix, '', 1)
+    def current_site_domain():
+        domain = Site.objects.get_current().domain
 
-    return domain
+        prefix = 'www.'
+        if getattr(settings, 'REMOVE_WWW_FROM_DOMAIN', False) \
+                and domain.startswith(prefix):
+            domain = domain.replace(prefix, '', 1)
 
-get_domain = current_site_domain
+        return domain
+
+    get_domain = current_site_domain
+else:
+    module_name, fn_name = get_domain_path.rsplit('.', 1)
+
+    try:
+        module = import_module(module_name)
+        fn = getattr(module, fn_name)
+        assert callable(fn)
+        get_domain = fn
+    except (ImportError, AttributeError, AssertionError):
+        raise ImproperlyConfigured('SUBDOMAIN_GET_DOMAIN doesn\'t exist or'
+                                   ' isn\'t a callable.')
 
 
 def urljoin(domain, path=None, scheme=None):
